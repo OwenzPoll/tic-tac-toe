@@ -7,7 +7,7 @@
 "use strict";
 
 // ── Firebase ──────────────────────────────────
-const FIREBASE_URL = "https://tic-tac-toe-614f0-default-rtdb.asia-southeast1.firebasedatabase.app/";
+const FIREBASE_URL = "https://tic-tac-toe-614f0-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 // ── State ─────────────────────────────────────
 let board         = Array(9).fill("");
@@ -26,7 +26,7 @@ const WIN_COMBOS = [
 const scores = { X: 0, O: 0, draw: 0 };
 
 // ── DOM Helpers ───────────────────────────────
-const $    = id => document.getElementById(id);
+const $     = id => document.getElementById(id);
 const cells = ()  => document.querySelectorAll(".cell");
 
 function getMode()       { return ($("mode")?.value)       ?? "ai"; }
@@ -92,7 +92,6 @@ function chooseAiMove() {
   if (diff === "easy") return randomMove(empty);
 
   if (diff === "normal") {
-    // Block/win jika bisa, sisanya acak 60%
     const win   = findWinningMove(AI);
     const block = findWinningMove(HUMAN);
     if (win   != null) return win;
@@ -100,7 +99,7 @@ function chooseAiMove() {
     return Math.random() < 0.6 ? randomMove(empty) : minimaxRoot(board);
   }
 
-  return minimaxRoot(board); // hard
+  return minimaxRoot(board);
 }
 
 function randomMove(empty) {
@@ -158,11 +157,11 @@ function minimax(b, depth, isMax, alpha, beta) {
 }
 
 // ── Win / Draw ────────────────────────────────
-function checkWin(p)           { return checkWinState(board, p); }
-function checkWinState(b, p)   { return WIN_COMBOS.some(c => c.every(i => b[i] === p)); }
-function isDraw()              { return !board.includes("") && !checkWin("X") && !checkWin("O"); }
-function emptySquares(b)       { return b.reduce((a,v,i) => v===""?[...a,i]:a, []); }
-function getWinCombo(p)        { return WIN_COMBOS.find(c => c.every(i => board[i]===p)) ?? null; }
+function checkWin(p)         { return checkWinState(board, p); }
+function checkWinState(b, p) { return WIN_COMBOS.some(c => c.every(i => b[i] === p)); }
+function isDraw()            { return !board.includes("") && !checkWin("X") && !checkWin("O"); }
+function emptySquares(b)     { return b.reduce((a,v,i) => v===""?[...a,i]:a, []); }
+function getWinCombo(p)      { return WIN_COMBOS.find(c => c.every(i => board[i]===p)) ?? null; }
 
 // ── End Game ──────────────────────────────────
 function endGame(winner) {
@@ -171,11 +170,11 @@ function endGame(winner) {
     scores[winner]++;
     updateScoreDisplay();
     highlightWinCells(winner);
-    showStatus(winner === "X" ? "X Menang!" : "O Menang!");
+    showStatus(winner === "X" ? "X Menang! 🎉" : "O Menang! 🎉");
   } else {
     scores.draw++;
     updateScoreDisplay();
-    showStatus("Seri!");
+    showStatus("Seri! 🤝");
   }
   showWinOverlay(winner);
 }
@@ -196,7 +195,8 @@ function updateStatusDisplay() {
 }
 
 function showStatus(text) {
-  const el = $("status"); if (el) el.textContent = text;
+  const el = $("status");
+  if (el) el.textContent = text;
 }
 
 function updateScoreDisplay() {
@@ -215,10 +215,10 @@ function showWinOverlay(winner) {
   const overlay = $("win-msg"), textEl = $("win-msg-text");
   if (!overlay || !textEl) return;
   if (winner) {
-    const color = winner === "X" ? "#e85d75" : "#4fc3f7";
-    textEl.innerHTML = `<span style="color:${color}">${winner}</span> Menang! <small>Klik reset untuk main lagi</small>`;
+    const color = winner === "X" ? "#f0607a" : "#38c8f0";
+    textEl.innerHTML = `<span style="color:${color}">${winner}</span> Menang! 🎉<small>Klik reset untuk main lagi</small>`;
   } else {
-    textEl.innerHTML = `Seri! <small>Klik reset untuk main lagi</small>`;
+    textEl.innerHTML = `Seri! 🤝<small>Klik reset untuk main lagi</small>`;
   }
   overlay.classList.add("show");
 }
@@ -249,48 +249,51 @@ function resetGame() {
 async function loadLeaderboard() {
   const list = $("leaderboard-list");
   if (!list) return;
-  list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;">Memuat...</p>`;
+  list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">Memuat...</p>`;
 
   try {
-    // Ambil semua skor, urutkan dari terbesar, limit 10
-    const url = `${FIREBASE_URL}/scores.json?orderBy="score"&limitToLast=10`;
-    const res  = await fetch(url);
+    // Ambil semua data tanpa orderBy (hindari butuh index)
+    const res = await fetch(`${FIREBASE_URL}/scores.json`);
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const raw = await res.json();
 
+    // Tidak ada data sama sekali
     if (!raw || typeof raw !== "object") {
-      list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;">Belum ada skor.</p>`;
+      list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">Belum ada skor. Menangkan dulu!</p>`;
       return;
     }
 
-    // raw = { "-key1": {name:"...", score:3, ts:...}, ... }
-    const entries = Object.entries(raw)
-      .map(([key, val]) => ({
-        key,
-        name:  String(val.name  ?? "Anonim"),
-        score: Number(val.score ?? 0),
-        ts:    Number(val.ts    ?? 0)
+    // Ubah object Firebase → array, urutkan di sisi client
+    const entries = Object.values(raw)
+      .map(val => ({
+        name:  String(val?.name  ?? "Anonim"),
+        score: Number(val?.score ?? 0),
+        ts:    Number(val?.ts    ?? 0)
       }))
-      .filter(e => e.name && e.score > 0)   // buang entry kosong
-      .sort((a, b) => b.score - a.score || b.ts - a.ts) // skor desc, ts desc
+      .filter(e => e.score > 0)
+      .sort((a, b) => b.score - a.score || b.ts - a.ts)
       .slice(0, 10);
 
     if (!entries.length) {
-      list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;">Belum ada skor.</p>`;
+      list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">Belum ada skor.</p>`;
       return;
     }
 
     list.innerHTML = "";
-    const medals  = ["1st","2nd","3rd"];
-    const icons   = ["🥇","🥈","🥉"];
+    const medals = ["gold", "silver", "bronze"];
+    const icons  = ["🥇", "🥈", "🥉"];
 
     entries.forEach((entry, i) => {
       const card = document.createElement("div");
       card.className = `lb-card ${medals[i] ?? ""}`;
+
+      // Stagger animation delay
+      card.style.animationDelay = `${i * 60}ms`;
+
       card.innerHTML = `
-        <span class="lb-rank">${icons[i] ?? "#" + (i+1)}</span>
+        <span class="lb-rank">${icons[i] ?? "#" + (i + 1)}</span>
         <span class="lb-name">${escapeHtml(entry.name)}</span>
         <span class="lb-score">${entry.score}</span>
       `;
@@ -298,52 +301,39 @@ async function loadLeaderboard() {
     });
 
   } catch (err) {
-    console.error("Gagal load leaderboard:", err);
-    list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;">Gagal memuat. Cek koneksi.</p>`;
+    console.error("Leaderboard error:", err);
+    list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">⚠️ Gagal memuat. Coba refresh.</p>`;
   }
 }
 
 async function submitScore(name, score) {
-  try {
-    const res = await fetch(`${FIREBASE_URL}/scores.json`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({
-        name:  name.trim(),
-        score: Number(score),
-        ts:    Date.now()
-      })
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    await loadLeaderboard(); // refresh
-  } catch (err) {
-    console.error("Gagal kirim skor:", err);
-    alert("Gagal menyimpan skor. Cek koneksi internet.");
-  }
+  await fetch(`${FIREBASE_URL}/scores.json`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({
+      name:  name.trim(),
+      score: Number(score),
+      ts:    Date.now()
+    })
+  });
+  await loadLeaderboard();
 }
 
-// Dipanggil dari tombol "Simpan Skor"
 function saveScore() {
   const input = $("playerName");
   const name  = input?.value?.trim();
 
-  if (!name) {
-    alert("Masukkan nama dulu!");
-    return;
-  }
+  if (!name) { alert("Masukkan nama dulu!"); return; }
 
   const wins = scores.X;
-  if (wins === 0) {
-    alert("Menangkan setidaknya 1 ronde dulu!");
-    return;
-  }
+  if (wins === 0) { alert("Menangkan setidaknya 1 ronde dulu!"); return; }
 
-  submitScore(name, wins).then(() => {
-    alert(` Skor "${name}" (${wins} menang) berhasil disimpan!`);
-    if (input) input.value = "";
-  });
+  submitScore(name, wins)
+    .then(() => {
+      alert(`✅ Skor "${name}" (${wins} menang) tersimpan!`);
+      if (input) input.value = "";
+    })
+    .catch(() => alert("❌ Gagal menyimpan. Cek koneksi."));
 }
 
 function escapeHtml(str) {
@@ -351,10 +341,6 @@ function escapeHtml(str) {
     .replace(/&/g,"&amp;").replace(/</g,"&lt;")
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
-
-// ── Pastikan Firebase Rules mengizinkan akses ──
-// Di Firebase Console → Realtime Database → Rules, set:
-// { "rules": { ".read": true, ".write": true } }
 
 // ── Init ──────────────────────────────────────
 loadLeaderboard();
