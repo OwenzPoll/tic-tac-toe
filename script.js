@@ -1,7 +1,7 @@
-/* ============================================
+   /* ============================================
    TIC TAC TOE — script.js
-   Fitur: Minimax + Alpha-Beta, mode PvP/AI,
-   3 tingkat kesulitan, leaderboard Firebase
+   Fitur: Minimax + Alpha-Beta, pilih simbol,
+   garis menang animasi, leaderboard Firebase
    ============================================ */
 
 "use strict";
@@ -14,8 +14,8 @@ let board         = Array(9).fill("");
 let currentPlayer = "X";
 let gameOver      = false;
 
-const HUMAN = "X";
-const AI    = "O";
+let HUMAN = "X";   // bisa berubah saat player pilih simbol
+let AI    = "O";
 
 const WIN_COMBOS = [
   [0,1,2],[3,4,5],[6,7,8],
@@ -25,12 +25,42 @@ const WIN_COMBOS = [
 
 const scores = { X: 0, O: 0, draw: 0 };
 
-// ── DOM Helpers ───────────────────────────────
+// ── DOM ───────────────────────────────────────
 const $     = id => document.getElementById(id);
 const cells = ()  => document.querySelectorAll(".cell");
 
-function getMode()       { return ($("mode")?.value)       ?? "ai"; }
 function getDifficulty() { return ($("difficulty")?.value) ?? "hard"; }
+
+// ═══════════════════════════════════════════════
+// PILIH SIMBOL
+// ═══════════════════════════════════════════════
+
+function pickSymbol(sym) {
+  if (gameOver === false && board.some(v => v !== "")) {
+    // Game sedang berjalan, konfirmasi dulu
+    if (!confirm("Game sedang berjalan. Reset dan ganti simbol?")) return;
+  }
+
+  HUMAN = sym;
+  AI    = sym === "X" ? "O" : "X";
+
+  // Update tombol picker
+  $("pick-x").className = "sym-btn" + (sym === "X" ? " active-x" : "");
+  $("pick-o").className = "sym-btn" + (sym === "O" ? " active-o" : "");
+
+  // Update label scorebar
+  $("label-x").textContent = sym === "X" ? "Kamu (X)" : "A.I (X)";
+  $("label-o").textContent = sym === "O" ? "Kamu (O)" : "A.I (O)";
+
+  // Reset board dengan simbol baru
+  resetGame();
+
+  // Kalau player pilih O, AI jalan duluan
+  if (HUMAN === "O") {
+    lockBoard(true);
+    setTimeout(doAiMove, 400);
+  }
+}
 
 // ═══════════════════════════════════════════════
 // GAME LOGIC
@@ -46,7 +76,7 @@ function klik(i) {
   currentPlayer = currentPlayer === "X" ? "O" : "X";
   updateStatusDisplay();
 
-  if (getMode() === "ai" && currentPlayer === AI && !gameOver) {
+  if (currentPlayer === AI && !gameOver) {
     lockBoard(true);
     setTimeout(doAiMove, 350);
   }
@@ -161,7 +191,10 @@ function checkWin(p)         { return checkWinState(board, p); }
 function checkWinState(b, p) { return WIN_COMBOS.some(c => c.every(i => b[i] === p)); }
 function isDraw()            { return !board.includes("") && !checkWin("X") && !checkWin("O"); }
 function emptySquares(b)     { return b.reduce((a,v,i) => v===""?[...a,i]:a, []); }
-function getWinCombo(p)      { return WIN_COMBOS.find(c => c.every(i => board[i]===p)) ?? null; }
+
+function getWinCombo(p) {
+  return WIN_COMBOS.find(c => c.every(i => board[i] === p)) ?? null;
+}
 
 // ── End Game ──────────────────────────────────
 function endGame(winner) {
@@ -170,24 +203,102 @@ function endGame(winner) {
     scores[winner]++;
     updateScoreDisplay();
     highlightWinCells(winner);
-    showStatus(winner === "X" ? "X Menang! 🎉" : "O Menang! 🎉");
+    drawWinLine(winner);
+    showStatus(winner === "X" ? "X Menang!" : "O Menang!");
   } else {
     scores.draw++;
     updateScoreDisplay();
-    showStatus("Seri! 🤝");
+    showStatus("Seri!");
   }
-  showWinOverlay(winner);
+  // Tunda overlay supaya garis terlihat dulu
+  setTimeout(() => showWinOverlay(winner), 600);
 }
 
 // ═══════════════════════════════════════════════
-// UI
+// WIN LINE — SVG animasi garis menang
+// ═══════════════════════════════════════════════
+
+/*
+  Board layout (3x3 grid, SVG viewBox 0 0 3 3):
+  Setiap cell = 1 unit. Center cell[i]:
+    row = Math.floor(i/3), col = i%3
+    cx = col + 0.5, cy = row + 0.5
+*/
+
+function cellCenter(i) {
+  return {
+    x: (i % 3) + 0.5,
+    y: Math.floor(i / 3) + 0.5
+  };
+}
+
+// Perpanjang sedikit supaya garis keluar dari tepi cell
+function extendLine(x1, y1, x2, y2, ext) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  const ux = dx/len, uy = dy/len;
+  return {
+    x1: x1 - ux*ext, y1: y1 - uy*ext,
+    x2: x2 + ux*ext, y2: y2 + uy*ext
+  };
+}
+
+function drawWinLine(winner) {
+  const combo = getWinCombo(winner);
+  if (!combo) return;
+
+  const [a, , c] = combo;
+  const start = cellCenter(a);
+  const end   = cellCenter(c);
+  const ext   = extendLine(start.x, start.y, end.x, end.y, 0.35);
+
+  const line  = $("win-line-path");
+  const color = winner === "X" ? "#e85d75" : "#4fc3f7";
+
+  // Reset animasi
+  line.setAttribute("x1", ext.x1);
+  line.setAttribute("y1", ext.y1);
+  line.setAttribute("x2", ext.x2);
+  line.setAttribute("y2", ext.y2);
+  line.setAttribute("stroke", color);
+  line.classList.remove("animate");
+
+  // Hitung panjang garis untuk dasharray
+  const dx = ext.x2 - ext.x1, dy = ext.y2 - ext.y1;
+  const lineLen = Math.sqrt(dx*dx + dy*dy);
+  line.style.strokeDasharray  = lineLen;
+  line.style.strokeDashoffset = lineLen;
+
+  // Trigger animasi
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      line.style.strokeDashoffset = "0";
+      line.style.transition = "stroke-dashoffset 0.5s cubic-bezier(0.4, 0, 0.2, 1)";
+    });
+  });
+}
+
+function clearWinLine() {
+  const line = $("win-line-path");
+  line.style.transition      = "none";
+  line.style.strokeDashoffset = line.style.strokeDasharray || "400";
+  // Reset posisi
+  line.setAttribute("x1","0"); line.setAttribute("y1","0");
+  line.setAttribute("x2","0"); line.setAttribute("y2","0");
+}
+
+// ═══════════════════════════════════════════════
+// UI UPDATES
 // ═══════════════════════════════════════════════
 
 function updateStatusDisplay() {
   const el = $("status");
   if (!el) return;
   const cls = currentPlayer.toLowerCase();
-  el.innerHTML = `Giliran: <span class="token ${cls}">${currentPlayer}</span>`;
+  const isHuman = currentPlayer === HUMAN;
+  const label = isHuman ? `Giliran kamu` : `Giliran A.I`;
+  el.innerHTML = `${label}: <span class="token ${cls}">${currentPlayer}</span>`;
+
   $("score-x-wrap") && ($("score-x-wrap").className =
     "score-item" + (currentPlayer === "X" ? " active-x" : ""));
   $("score-o-wrap") && ($("score-o-wrap").className =
@@ -195,8 +306,7 @@ function updateStatusDisplay() {
 }
 
 function showStatus(text) {
-  const el = $("status");
-  if (el) el.textContent = text;
+  const el = $("status"); if (el) el.textContent = text;
 }
 
 function updateScoreDisplay() {
@@ -215,10 +325,11 @@ function showWinOverlay(winner) {
   const overlay = $("win-msg"), textEl = $("win-msg-text");
   if (!overlay || !textEl) return;
   if (winner) {
-    const color = winner === "X" ? "#f0607a" : "#38c8f0";
-    textEl.innerHTML = `<span style="color:${color}">${winner}</span> Menang! 🎉<small>Klik reset untuk main lagi</small>`;
+    const color = winner === "X" ? "#e85d75" : "#4fc3f7";
+    const isMe  = winner === HUMAN;
+    textEl.innerHTML = `<span style="color:${color}">${winner}</span> Menang!${isMe ? " 🎉" : " 🤖"}<small>Klik reset untuk main lagi</small>`;
   } else {
-    textEl.innerHTML = `Seri! 🤝<small>Klik reset untuk main lagi</small>`;
+    textEl.innerHTML = `Seri!<small>Klik reset untuk main lagi</small>`;
   }
   overlay.classList.add("show");
 }
@@ -227,10 +338,12 @@ function lockBoard(locked) {
   cells().forEach(c => { c.style.pointerEvents = locked ? "none" : ""; });
 }
 
+// ── Reset ─────────────────────────────────────
 function resetGame() {
-  board = Array(9).fill("");
+  board         = Array(9).fill("");
   currentPlayer = "X";
   gameOver      = false;
+
   cells().forEach(cell => {
     cell.classList.remove("taken","win-cell","x","o");
     cell.style.pointerEvents = "";
@@ -238,6 +351,8 @@ function resetGame() {
     if (mark) { mark.textContent = ""; mark.className = "mark"; }
     else       { cell.textContent = ""; }
   });
+
+  clearWinLine();
   $("win-msg")?.classList.remove("show");
   updateStatusDisplay();
 }
@@ -249,23 +364,18 @@ function resetGame() {
 async function loadLeaderboard() {
   const list = $("leaderboard-list");
   if (!list) return;
-  list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">Memuat...</p>`;
+  list.innerHTML = `<p style="opacity:0.4;font-size:0.8rem;text-align:center;padding:1rem">Memuat...</p>`;
 
   try {
-    // Ambil semua data tanpa orderBy (hindari butuh index)
     const res = await fetch(`${FIREBASE_URL}/scores.json`);
-
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
     const raw = await res.json();
 
-    // Tidak ada data sama sekali
     if (!raw || typeof raw !== "object") {
-      list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">Belum ada skor. Menangkan dulu!</p>`;
+      list.innerHTML = `<p style="opacity:0.4;font-size:0.8rem;text-align:center;padding:0.8rem">Belum ada skor.</p>`;
       return;
     }
 
-    // Ubah object Firebase → array, urutkan di sisi client
     const entries = Object.values(raw)
       .map(val => ({
         name:  String(val?.name  ?? "Anonim"),
@@ -277,23 +387,20 @@ async function loadLeaderboard() {
       .slice(0, 10);
 
     if (!entries.length) {
-      list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">Belum ada skor.</p>`;
+      list.innerHTML = `<p style="opacity:0.4;font-size:0.8rem;text-align:center;padding:0.8rem">Belum ada skor.</p>`;
       return;
     }
 
     list.innerHTML = "";
-    const medals = ["gold", "silver", "bronze"];
-    const icons  = ["🥇", "🥈", "🥉"];
+    const medals = ["gold","silver","bronze"];
+    const icons  = ["🥇","🥈","🥉"];
 
     entries.forEach((entry, i) => {
       const card = document.createElement("div");
       card.className = `lb-card ${medals[i] ?? ""}`;
-
-      // Stagger animation delay
-      card.style.animationDelay = `${i * 60}ms`;
-
+      card.style.animationDelay = `${i * 55}ms`;
       card.innerHTML = `
-        <span class="lb-rank">${icons[i] ?? "#" + (i + 1)}</span>
+        <span class="lb-rank">${icons[i] ?? "#"+(i+1)}</span>
         <span class="lb-name">${escapeHtml(entry.name)}</span>
         <span class="lb-score">${entry.score}</span>
       `;
@@ -302,38 +409,34 @@ async function loadLeaderboard() {
 
   } catch (err) {
     console.error("Leaderboard error:", err);
-    list.innerHTML = `<p style="opacity:0.5;font-size:0.8rem;text-align:center;padding:1rem">⚠️ Gagal memuat. Coba refresh.</p>`;
+    list.innerHTML = `<p style="opacity:0.4;font-size:0.8rem;text-align:center;padding:0.8rem">⚠️ Gagal memuat.</p>`;
   }
 }
 
 async function submitScore(name, score) {
-  await fetch(`${FIREBASE_URL}/scores.json`, {
+  const res = await fetch(`${FIREBASE_URL}/scores.json`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({
-      name:  name.trim(),
-      score: Number(score),
-      ts:    Date.now()
-    })
+    body:    JSON.stringify({ name: name.trim(), score: Number(score), ts: Date.now() })
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   await loadLeaderboard();
 }
 
 function saveScore() {
   const input = $("playerName");
   const name  = input?.value?.trim();
-
   if (!name) { alert("Masukkan nama dulu!"); return; }
 
-  const wins = scores.X;
+  const wins = scores[HUMAN];
   if (wins === 0) { alert("Menangkan setidaknya 1 ronde dulu!"); return; }
 
   submitScore(name, wins)
     .then(() => {
-      alert(`✅ Skor "${name}" (${wins} menang) tersimpan!`);
+      alert(`Skor "${name}" (${wins} menang) tersimpan!`);
       if (input) input.value = "";
     })
-    .catch(() => alert("❌ Gagal menyimpan. Cek koneksi."));
+    .catch(() => alert("Gagal menyimpan. Cek koneksi."));
 }
 
 function escapeHtml(str) {
@@ -344,3 +447,4 @@ function escapeHtml(str) {
 
 // ── Init ──────────────────────────────────────
 loadLeaderboard();
+updateStatusDisplay();
